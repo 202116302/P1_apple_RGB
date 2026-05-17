@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RGB 이미지 기반 과실 분석 플랫폼</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #2d5a27 0%, #4a7c43 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 1.8em;
+            margin-bottom: 5px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 0.95em;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 1024px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .card-header {
+            background: #f8f9fa;
+            padding: 15px 20px;
+            border-bottom: 1px solid #eee;
+            font-weight: 600;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .card-body {
+            padding: 20px;
+        }
+
+        /* Upload Area */
+        .upload-area {
+            border: 3px dashed #ddd;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: #fafafa;
+        }
+
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #4a7c43;
+            background: #f0f7f0;
+        }
+
+        .upload-area svg {
+            width: 60px;
+            height: 60px;
+            fill: #999;
+            margin-bottom: 15px;
+        }
+
+        .upload-area h3 {
+            color: #555;
+            margin-bottom: 10px;
+        }
+
+        .upload-area p {
+            color: #888;
+            font-size: 0.9em;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-card.green {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+
+        .stat-card.orange {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+
+        .stat-card.blue {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+
+        .stat-number {
+            font-size: 2em;
+            font-weight: bold;
+        }
+
+        .stat-label {
+            font-size: 0.85em;
+            opacity: 0.9;
+        }
+
+        /* Map */
+        #map {
+            height: 400px;
+            border-radius: 8px;
+        }
+
+        /* Results */
+        .results-list {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .result-item {
+            display: flex;
+            gap: 15px;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+            transition: background 0.2s;
+        }
+
+        .result-item:hover {
+            background: #f9f9f9;
+        }
+
+        .result-item:last-child {
+            border-bottom: none;
+        }
+
+        .result-image {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+
+        .result-info {
+            flex: 1;
+        }
+
+        .result-info h4 {
+            margin-bottom: 8px;
+            color: #333;
+        }
+
+        .result-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .tag {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 500;
+        }
+
+        .tag.normal {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .tag.disease {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .tag.grade-a {
+            background: #cce5ff;
+            color: #004085;
+        }
+
+        .tag.grade-b {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .tag.grade-c {
+            background: #f5c6cb;
+            color: #721c24;
+        }
+
+        .tag.gps {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+
+        /* Loading */
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #4a7c43;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: all 0.2s;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+        }
+
+        .btn-primary {
+            background: #4a7c43;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #3d6638;
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            padding: 10px 0;
+            font-size: 0.85em;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            fill: #ddd;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>RGB 이미지 기반 과실 분석 플랫폼</h1>
+        <p>사과 이미지를 업로드하여 병해 및 숙도를 분석하고 지도에서 확인하세요</p>
+    </header>
+
+    <div class="container">
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number" id="statImages">0</div>
+                <div class="stat-label">분석된 이미지</div>
+            </div>
+            <div class="stat-card green">
+                <div class="stat-number" id="statApples">0</div>
+                <div class="stat-label">탐지된 사과</div>
+            </div>
+            <div class="stat-card orange">
+                <div class="stat-number" id="statDisease">0%</div>
+                <div class="stat-label">정상 비율</div>
+            </div>
+            <div class="stat-card blue">
+                <div class="stat-number" id="statGPS">0</div>
+                <div class="stat-label">GPS 포함</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Left Column -->
+            <div>
+                <!-- Upload Card -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header">
+                        <span>이미지 업로드</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="upload-area" id="uploadArea">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/>
+                            </svg>
+                            <h3>이미지를 여기에 드래그하세요</h3>
+                            <p>또는 클릭하여 파일 선택 (JPG, PNG)</p>
+                        </div>
+                        <input type="file" id="fileInput" accept=".jpg,.jpeg,.png" multiple>
+
+                        <div class="loading" id="loading">
+                            <div class="spinner"></div>
+                            <p>이미지 분석 중...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Map Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <span>위치 기반 시각화</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="legend">
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #28a745;"></div>
+                                <span>정상</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #dc3545;"></div>
+                                <span>질병</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #007bff;"></div>
+                                <span>A등급</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #ffc107;"></div>
+                                <span>B등급</span>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-color" style="background: #6c757d;"></div>
+                                <span>C등급</span>
+                            </div>
+                        </div>
+                        <div id="map"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column -->
+            <div>
+                <!-- Results Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <span>분석 결과</span>
+                        <button class="btn btn-danger" onclick="clearResults()">전체 삭제</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="results-list" id="resultsList">
+                            <div class="empty-state" id="emptyState">
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/>
+                                </svg>
+                                <h3>분석 결과가 없습니다</h3>
+                                <p>이미지를 업로드하여 분석을 시작하세요</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // Map 초기화
+        const map = L.map('map').setView([35.9, 127.8], 7);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(map);
+
+        const markers = L.layerGroup().addTo(map);
+
+        // 파일 업로드 영역
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const loading = document.getElementById('loading');
+        const resultsList = document.getElementById('resultsList');
+        const emptyState = document.getElementById('emptyState');
+
+        // 드래그 앤 드롭
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        // 파일 처리
+        async function handleFiles(files) {
+            if (files.length === 0) return;
+
+            uploadArea.style.display = 'none';
+            loading.style.display = 'block';
+
+            const formData = new FormData();
+            for (let file of files) {
+                formData.append('files', file);
+            }
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log('Upload response:', data);
+
+                if (data.success && data.results) {
+                    updateResults(data.results);
+                    await updateStats();
+                }
+            } catch (error) {
+                console.error('Upload error:', error);
+                alert('업로드 중 오류가 발생했습니다: ' + error.message);
+            }
+
+            loading.style.display = 'none';
+            uploadArea.style.display = 'block';
+            fileInput.value = '';
+        }
+
+        // 결과 업데이트
+        function updateResults(results) {
+            console.log('Updating results:', results);
+
+            if (!results || results.length === 0) {
+                console.log('No results to display');
+                return;
+            }
+
+            emptyState.style.display = 'none';
+
+            for (let result of results) {
+                try {
+                    const item = document.createElement('div');
+                    item.className = 'result-item';
+
+                    let tagsHtml = '';
+
+                    // GPS 태그
+                    if (result.gps && result.gps.latitude && result.gps.longitude) {
+                        tagsHtml += `<span class="tag gps">GPS: ${result.gps.latitude.toFixed(4)}, ${result.gps.longitude.toFixed(4)}</span>`;
+
+                        // 지도에 마커 추가
+                        if (result.apples && result.apples.length > 0) {
+                            for (let apple of result.apples) {
+                                const diseaseClass = apple.disease ? apple.disease.class : '정상';
+                                const color = diseaseClass === '정상' ? '#28a745' : '#dc3545';
+
+                                const marker = L.circleMarker([result.gps.latitude, result.gps.longitude], {
+                                    radius: 10,
+                                    fillColor: color,
+                                    color: '#fff',
+                                    weight: 2,
+                                    opacity: 1,
+                                    fillOpacity: 0.8
+                                });
+
+                                const diseaseInfo = apple.disease ? `${apple.disease.class} (${(apple.disease.confidence * 100).toFixed(1)}%)` : 'N/A';
+                                const sugarInfo = apple.sugar_grade ? `${apple.sugar_grade.class} (${(apple.sugar_grade.confidence * 100).toFixed(1)}%)` : 'N/A';
+
+                                marker.bindPopup(`
+                                    <strong>${result.original_filename || result.filename}</strong><br>
+                                    병해: ${diseaseInfo}<br>
+                                    숙도: ${sugarInfo}
+                                `);
+
+                                markers.addLayer(marker);
+                            }
+                        }
+
+                        // 지도 뷰 조정
+                        try {
+                            const layers = markers.getLayers();
+                            if (layers.length > 0) {
+                                const lastMarker = layers[layers.length - 1];
+                                const latlng = lastMarker.getLatLng();
+                                map.setView(latlng, 15);
+                            }
+                        } catch (mapErr) {
+                            console.log('Map view adjustment skipped:', mapErr);
+                        }
+                    } else {
+                        tagsHtml += `<span class="tag gps">GPS 없음</span>`;
+                    }
+
+                    // 사과별 태그
+                    if (result.apples && result.apples.length > 0) {
+                        for (let apple of result.apples) {
+                            if (apple.disease) {
+                                const diseaseTagClass = apple.disease.class === '정상' ? 'normal' : 'disease';
+                                tagsHtml += `<span class="tag ${diseaseTagClass}">${apple.disease.class} (${(apple.disease.confidence * 100).toFixed(0)}%)</span>`;
+                            }
+
+                            if (apple.sugar_grade) {
+                                let gradeClass = 'grade-c';
+                                if (apple.sugar_grade.class === 'A등급') gradeClass = 'grade-a';
+                                else if (apple.sugar_grade.class === 'B등급') gradeClass = 'grade-b';
+                                tagsHtml += `<span class="tag ${gradeClass}">${apple.sugar_grade.class} (${(apple.sugar_grade.confidence * 100).toFixed(0)}%)</span>`;
+                            }
+                        }
+                    } else {
+                        tagsHtml += `<span class="tag">사과 미탐지</span>`;
+                    }
+
+                    const filename = result.original_filename || result.filename || 'Unknown';
+                    const imageUrl = result.url || '';
+
+                    item.innerHTML = `
+                        <img src="${imageUrl}" class="result-image" alt="${filename}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22><rect fill=%22%23ddd%22 width=%22100%22 height=%22100%22/></svg>'">
+                        <div class="result-info">
+                            <h4>${filename}</h4>
+                            <div class="result-tags">${tagsHtml}</div>
+                        </div>
+                    `;
+
+                    // emptyState 앞에 삽입
+                    if (emptyState.parentNode === resultsList) {
+                        resultsList.insertBefore(item, emptyState);
+                    } else {
+                        resultsList.insertBefore(item, resultsList.firstChild);
+                    }
+
+                    console.log('Added result item for:', filename);
+                } catch (err) {
+                    console.error('Error adding result item:', err, result);
+                }
+            }
+        }
+
+        // 통계 업데이트
+        async function updateStats() {
+            try {
+                const response = await fetch('/api/stats');
+                const stats = await response.json();
+
+                document.getElementById('statImages').textContent = stats.total_images;
+                document.getElementById('statApples').textContent = stats.total_apples;
+                document.getElementById('statGPS').textContent = stats.images_with_gps;
+
+                const total = stats.disease_stats['정상'] + stats.disease_stats['질병'];
+                if (total > 0) {
+                    const normalPercent = Math.round((stats.disease_stats['정상'] / total) * 100);
+                    document.getElementById('statDisease').textContent = normalPercent + '%';
+                }
+            } catch (error) {
+                console.error('Stats error:', error);
+            }
+        }
+
+        // 결과 삭제
+        async function clearResults() {
+            if (!confirm('모든 분석 결과를 삭제하시겠습니까?')) return;
+
+            try {
+                await fetch('/api/results', { method: 'DELETE' });
+
+                // UI 초기화
+                resultsList.innerHTML = '';
+                resultsList.appendChild(emptyState);
+                emptyState.style.display = 'block';
+
+                markers.clearLayers();
+
+                document.getElementById('statImages').textContent = '0';
+                document.getElementById('statApples').textContent = '0';
+                document.getElementById('statDisease').textContent = '0%';
+                document.getElementById('statGPS').textContent = '0';
+            } catch (error) {
+                console.error('Clear error:', error);
+            }
+        }
+
+        // 초기 통계 로드
+        updateStats();
+    </script>
+</body>
+</html>

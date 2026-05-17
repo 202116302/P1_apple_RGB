@@ -1,0 +1,45 @@
+# Data folders (large files)
+data/
+cached_data/
+datasets/
+
+# Trained models (large files)
+models/
+
+# Uploads
+web/uploads/*
+!web/uploads/.gitkeep
+
+# Test files
+*.jpg
+*.jpeg
+*.png
+!web/static/**/*.png
+!web/static/**/*.jpg
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
+
+# Logs
+*.log
