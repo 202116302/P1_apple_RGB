@@ -52,12 +52,10 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 MODEL_DIR = Path(__file__).parent.parent / "models"
 YOLO_MODEL_PATH = MODEL_DIR / "yolo_apple_seg" / "weights" / "best.pt"
 FRUIT_DISEASE_MODEL_PATH = MODEL_DIR / "disease_fruit_classifier_preprocessed" / "best_model.pth"
-SUGAR_MODEL_PATH = MODEL_DIR / "sugar_classifier_preprocessed" / "best_model.pth"
 
 # 전역 모델 변수
 yolo_model = None
 fruit_disease_model = None
-sugar_model = None
 transform = None
 device = None
 
@@ -67,7 +65,7 @@ analysis_results = []
 
 def load_models():
     """모델 로드"""
-    global yolo_model, fruit_disease_model, sugar_model, transform, device
+    global yolo_model, fruit_disease_model, transform, device
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Loading models on {device}...")
@@ -85,13 +83,6 @@ def load_models():
         print("Fruit disease model loaded")
     else:
         print(f"Warning: Fruit disease model not found")
-
-    # 숙도 모델
-    if SUGAR_MODEL_PATH.exists():
-        sugar_model = load_model(str(SUGAR_MODEL_PATH), num_classes=3, device=device)
-        print("Sugar model loaded")
-    else:
-        print(f"Warning: Sugar model not found")
 
     # Transform
     transform = get_transforms(img_size=224, is_training=False, apply_preprocessing=False)
@@ -191,8 +182,7 @@ def analyze_image(image_path: str) -> dict:
                     "id": i + 1,
                     "bbox": [x1, y1, x2, y2],
                     "yolo_confidence": round(confidence, 3),
-                    "disease": None,
-                    "sugar_grade": None
+                    "disease": None
                 }
 
                 # PIL 이미지로 변환
@@ -210,20 +200,6 @@ def analyze_image(image_path: str) -> dict:
                     disease_classes = ["정상", "질병"]
                     apple_result["disease"] = {
                         "class": disease_classes[pred],
-                        "confidence": round(conf, 3)
-                    }
-
-                # 숙도 분류
-                if sugar_model:
-                    with torch.no_grad():
-                        output = sugar_model(apple_tensor)
-                        probs = torch.softmax(output, dim=1)
-                        pred = probs.argmax(dim=1).item()
-                        conf = probs[0][pred].item()
-
-                    sugar_classes = ["A등급", "B등급", "C등급"]
-                    apple_result["sugar_grade"] = {
-                        "class": sugar_classes[pred],
                         "confidence": round(conf, 3)
                     }
 
@@ -314,14 +290,11 @@ async def get_stats():
     total_apples = sum(len(r.get("apples", [])) for r in analysis_results)
 
     disease_stats = {"정상": 0, "질병": 0}
-    sugar_stats = {"A등급": 0, "B등급": 0, "C등급": 0}
 
     for result in analysis_results:
         for apple in result.get("apples", []):
             if apple.get("disease"):
                 disease_stats[apple["disease"]["class"]] += 1
-            if apple.get("sugar_grade"):
-                sugar_stats[apple["sugar_grade"]["class"]] += 1
 
     gps_count = sum(1 for r in analysis_results if r.get("gps"))
 
@@ -329,8 +302,7 @@ async def get_stats():
         "total_images": total_images,
         "total_apples": total_apples,
         "images_with_gps": gps_count,
-        "disease_stats": disease_stats,
-        "sugar_stats": sugar_stats
+        "disease_stats": disease_stats
     })
 
 
