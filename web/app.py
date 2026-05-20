@@ -28,6 +28,7 @@ from PIL.ExifTags import TAGS, GPSTAGS
 from ultralytics import YOLO
 
 from models.efficientnet_classifier import load_model
+from models.efficientnet_regressor import load_regressor
 from models.dataset import get_transforms
 from models.preprocessing import preprocess_image
 
@@ -52,10 +53,16 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 MODEL_DIR = Path(__file__).parent.parent / "models"
 YOLO_MODEL_PATH = MODEL_DIR / "yolo_apple_seg" / "weights" / "best.pt"
 FRUIT_DISEASE_MODEL_PATH = MODEL_DIR / "disease_fruit_classifier_preprocessed" / "best_model.pth"
+SIZE_MODEL_PATH = MODEL_DIR / "size_classifier" / "best_model.pth"
+WEIGHT_MODEL_PATH = MODEL_DIR / "weight_regressor" / "best_model.pth"
 
 # 전역 모델 변수
 yolo_model = None
 fruit_disease_model = None
+size_model = None
+weight_model = None
+weight_mean = 297.23  # 학습 시 사용된 정규화 파라미터
+weight_std = 54.28
 transform = None
 device = None
 
@@ -65,7 +72,7 @@ analysis_results = []
 
 def load_models():
     """모델 로드"""
-    global yolo_model, fruit_disease_model, transform, device
+    global yolo_model, fruit_disease_model, size_model, weight_model, weight_mean, weight_std, transform, device
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Loading models on {device}...")
@@ -83,6 +90,25 @@ def load_models():
         print("Fruit disease model loaded")
     else:
         print(f"Warning: Fruit disease model not found")
+
+    # 크기 분류 모델
+    if SIZE_MODEL_PATH.exists():
+        size_model = load_model(str(SIZE_MODEL_PATH), num_classes=3, device=device)
+        print("Size classifier model loaded")
+    else:
+        print(f"Warning: Size classifier model not found at {SIZE_MODEL_PATH}")
+
+    # 무게 예측 모델
+    if WEIGHT_MODEL_PATH.exists():
+        weight_model = load_regressor(str(WEIGHT_MODEL_PATH), device=device)
+        # 학습 시 저장된 정규화 파라미터 로드
+        checkpoint = torch.load(str(WEIGHT_MODEL_PATH), map_location=device, weights_only=False)
+        if 'weight_mean' in checkpoint:
+            weight_mean = checkpoint['weight_mean']
+            weight_std = checkpoint['weight_std']
+        print(f"Weight regressor model loaded (mean={weight_mean:.2f}g, std={weight_std:.2f}g)")
+    else:
+        print(f"Warning: Weight regressor model not found at {WEIGHT_MODEL_PATH}")
 
     # Transform
     transform = get_transforms(img_size=224, is_training=False, apply_preprocessing=False)
@@ -182,7 +208,9 @@ def analyze_image(image_path: str) -> dict:
                     "id": i + 1,
                     "bbox": [x1, y1, x2, y2],
                     "yolo_confidence": round(confidence, 3),
-                    "disease": None
+                    "disease": None,
+                    "size": None,
+                    "weight": None
                 }
 
                 # PIL 이미지로 변환
@@ -201,6 +229,32 @@ def analyze_image(image_path: str) -> dict:
                     apple_result["disease"] = {
                         "class": disease_classes[pred],
                         "confidence": round(conf, 3)
+                    }
+
+                # 크기 분류
+                if size_model:
+                    with torch.no_grad():
+                        output = size_model(apple_tensor)
+                        probs = torch.softmax(output, dim=1)
+                        pred = probs.argmax(dim=1).item()
+                        conf = probs[0][pred].item()
+
+                    size_classes = ["L", "M", "S"]
+                    apple_result["size"] = {
+                        "class": size_classes[pred],
+                        "confidence": round(conf, 3)
+                    }
+
+                # 무게 예측
+                if weight_model:
+                    with torch.no_grad():
+                        output = weight_model(apple_tensor)
+                        # 정규화 역변환
+                        predicted_weight = output.item() * weight_std + weight_mean
+
+                    apple_result["weight"] = {
+                        "value": round(predicted_weight, 1),
+                        "unit": "g"
                     }
 
                 results["apples"].append(apple_result)
@@ -290,19 +344,35 @@ async def get_stats():
     total_apples = sum(len(r.get("apples", [])) for r in analysis_results)
 
     disease_stats = {"정상": 0, "질병": 0}
+    size_stats = {"L": 0, "M": 0, "S": 0}
+    weights = []
 
     for result in analysis_results:
         for apple in result.get("apples", []):
             if apple.get("disease"):
                 disease_stats[apple["disease"]["class"]] += 1
+            if apple.get("size"):
+                size_stats[apple["size"]["class"]] += 1
+            if apple.get("weight"):
+                weights.append(apple["weight"]["value"])
 
     gps_count = sum(1 for r in analysis_results if r.get("gps"))
+
+    weight_stats = None
+    if weights:
+        weight_stats = {
+            "min": round(min(weights), 1),
+            "max": round(max(weights), 1),
+            "avg": round(sum(weights) / len(weights), 1)
+        }
 
     return JSONResponse(content={
         "total_images": total_images,
         "total_apples": total_apples,
         "images_with_gps": gps_count,
-        "disease_stats": disease_stats
+        "disease_stats": disease_stats,
+        "size_stats": size_stats,
+        "weight_stats": weight_stats
     })
 
 

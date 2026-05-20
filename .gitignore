@@ -5,6 +5,7 @@ datasets/
 
 # Trained models (large files)
 models/
+diseaster_model_new/
 
 # Uploads
 web/uploads/*

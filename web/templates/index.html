@@ -383,14 +383,16 @@
                 <thead>
                     <tr>
                         <th style="width: 60px;">번호</th>
-                        <th style="width: 120px;">질병유무</th>
+                        <th style="width: 100px;">질병유무</th>
+                        <th style="width: 80px;">크기</th>
+                        <th style="width: 100px;">무게</th>
                         <th>위도</th>
                         <th>경도</th>
                     </tr>
                 </thead>
                 <tbody id="resultsBody">
                     <tr id="emptyRow">
-                        <td colspan="4" class="empty-table">분석 결과가 없습니다. 이미지를 업로드하세요.</td>
+                        <td colspan="6" class="empty-table">분석 결과가 없습니다. 이미지를 업로드하세요.</td>
                     </tr>
                 </tbody>
             </table>
@@ -402,10 +404,12 @@
 
     <script>
         // 지도 초기화
-        const mapDetail = L.map('mapDetail').setView([36.5, 127.5], 7);
+        const mapDetail = L.map('mapDetail', { maxZoom: 22 }).setView([36.5, 127.5], 7);
 
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap'
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: '&copy; Esri',
+            maxZoom: 22,
+            maxNativeZoom: 19
         }).addTo(mapDetail);
 
         const detailMarkers = L.layerGroup().addTo(mapDetail);
@@ -496,6 +500,8 @@
             const apple = result.apples && result.apples.length > 0 ? result.apples[0] : null;
             const diseaseClass = apple && apple.disease ? apple.disease.class : '미확인';
             const isNormal = diseaseClass === '정상';
+            const sizeClass = apple && apple.size ? apple.size.class : '-';
+            const weightValue = apple && apple.weight ? apple.weight.value + 'g' : '-';
             const lat = result.gps ? result.gps.latitude : null;
             const lng = result.gps ? result.gps.longitude : null;
 
@@ -512,11 +518,15 @@
                         <span class="value ${isNormal ? 'normal' : 'disease'}">${diseaseClass}</span>
                     </div>
                     <div class="info-row">
-                        <span class="label">위도 : </span>
-                        <span class="value">${lat ? lat.toFixed(6) : '-'}</span>
+                        <span class="label">크기 : </span>
+                        <span class="value">${sizeClass}</span>
+                        <span class="label" style="margin-left: 15px;">무게 : </span>
+                        <span class="value">${weightValue}</span>
                     </div>
                     <div class="info-row">
-                        <span class="label">경도 : </span>
+                        <span class="label">위도 : </span>
+                        <span class="value">${lat ? lat.toFixed(6) : '-'}</span>
+                        <span class="label" style="margin-left: 15px;">경도 : </span>
                         <span class="value">${lng ? lng.toFixed(6) : '-'}</span>
                     </div>
                 </div>
@@ -529,6 +539,8 @@
             row.innerHTML = `
                 <td>${result.index}</td>
                 <td class="${isNormal ? 'status-normal' : 'status-disease'}">${diseaseClass}</td>
+                <td>${sizeClass}</td>
+                <td>${weightValue}</td>
                 <td>${lat ? lat.toFixed(6) : '-'}</td>
                 <td>${lng ? lng.toFixed(6) : '-'}</td>
             `;
@@ -547,11 +559,11 @@
                     iconAnchor: [12, 12]
                 });
                 const detailMarker = L.marker([lat, lng], { icon: numberIcon });
-                detailMarker.bindPopup(`#${result.index} - ${diseaseClass}<br>위도: ${lat.toFixed(6)}<br>경도: ${lng.toFixed(6)}`);
+                detailMarker.bindPopup(`#${result.index} - ${diseaseClass}<br>크기: ${sizeClass} / 무게: ${weightValue}<br>위도: ${lat.toFixed(6)}<br>경도: ${lng.toFixed(6)}`);
                 detailMarkers.addLayer(detailMarker);
 
                 // 지도 뷰 조정 (1.5배 더 확대)
-                mapDetail.setView([lat, lng], 18);
+                mapDetail.setView([lat, lng], 20);
             }
         }
 
