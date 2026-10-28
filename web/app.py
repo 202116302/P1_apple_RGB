@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
 
-# 모델 경로 추가
-sys.path.append(str(Path(__file__).parent.parent / "scripts"))
+# 모델 경로 추가 (scripts 폴더를 맨 앞에 추가하여 우선 검색)
+sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
