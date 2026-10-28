@@ -18,6 +18,26 @@
         .header-spacer { min-width: 200px; }
         .grid-container { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto; gap: 15px; }
         @media (max-width: 1200px) { .grid-container { grid-template-columns: 1fr; } }
+        @media (max-width: 768px) {
+            .header-row { flex-direction: column; gap: 10px; padding: 12px 15px; }
+            .header-title { font-size: 1.1em; order: -1; line-height: 1.4; }
+            .weather-time { min-width: auto; width: 100%; flex-direction: row; justify-content: space-between; align-items: center; }
+            .header-spacer { display: none; }
+            .main-container { padding: 10px; }
+            .upload-container { flex-direction: column; }
+            .result-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .weather-current { grid-template-columns: 1fr 1fr; }
+            #mapDetail { height: 350px; }
+            .map-controls { flex-wrap: wrap; gap: 8px; }
+            .legend { flex-wrap: wrap; }
+        }
+        @media (max-width: 480px) {
+            .header-title { font-size: 0.95em; }
+            .weather-time { flex-direction: column; align-items: flex-start; gap: 3px; }
+            .weather-summary { font-size: 0.85em; }
+            .result-grid { grid-template-columns: 1fr; }
+            .card-header { padding: 10px 15px; font-size: 0.9em; }
+        }
         .card { background: white; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); overflow: hidden; }
         .card-header { background: #f8f9fa; padding: 12px 20px; border-bottom: 1px solid #eee; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
         .card-body { padding: 15px; }
