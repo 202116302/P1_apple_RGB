@@ -3,9 +3,11 @@ data/
 cached_data/
 datasets/
 
-# Trained models (large files)
-models/
+# Trained models (large files) - root models folder only
+/models/
 diseaster_model_new/
+# Keep scripts/models (Python source code)
+!scripts/models/
 
 # Uploads
 web/uploads/*
@@ -17,6 +19,8 @@ web/uploads/*
 *.png
 !web/static/**/*.png
 !web/static/**/*.jpg
+!images/**/*.jpg
+!images/**/*.png
 
 # Python
 __pycache__/
