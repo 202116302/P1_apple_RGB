@@ -30,6 +30,9 @@ RUN mkdir -p /app/web/uploads
 # Set working directory to web
 WORKDIR /app/web
 
+# Set Python path to find models module
+ENV PYTHONPATH=/app
+
 # Expose port
 EXPOSE 8000
 
