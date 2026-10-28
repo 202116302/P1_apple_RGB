@@ -1,0 +1,12 @@
+__pycache__
+*.pyc
+*.pyo
+.git
+.gitignore
+*.md
+*.pptx
+nul
+.env
+*.log
+web/uploads/*
+!web/uploads/.gitkeep

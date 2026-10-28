@@ -16,9 +16,10 @@ sys.path.append(str(Path(__file__).parent.parent / "scripts"))
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.requests import Request
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
 
 import torch
 import cv2
@@ -53,15 +54,17 @@ templates = Jinja2Templates(directory=BASE_DIR / "templates")
 MODEL_DIR = Path(__file__).parent.parent / "models"
 YOLO_MODEL_PATH = MODEL_DIR / "yolo_apple_seg" / "weights" / "best.pt"
 FRUIT_DISEASE_MODEL_PATH = MODEL_DIR / "disease_fruit_classifier_preprocessed" / "best_model.pth"
-SIZE_MODEL_PATH = MODEL_DIR / "size_classifier" / "best_model.pth"
+DIAMETER_MODEL_PATH = MODEL_DIR / "diameter_regressor" / "best_model.pth"
 WEIGHT_MODEL_PATH = MODEL_DIR / "weight_regressor" / "best_model.pth"
 
 # 전역 모델 변수
 yolo_model = None
 fruit_disease_model = None
-size_model = None
+diameter_model = None
 weight_model = None
-weight_mean = 297.23  # 학습 시 사용된 정규화 파라미터
+diameter_mean = 82.55  # 학습 시 사용된 정규화 파라미터
+diameter_std = 5.83
+weight_mean = 297.23
 weight_std = 54.28
 transform = None
 device = None
@@ -69,10 +72,17 @@ device = None
 # 분석 결과 저장 (실제 서비스에서는 DB 사용)
 analysis_results = []
 
+# 기상 API 설정
+WEATHER_API_BASE = "http://weather-rda.digitalag.kr:8001"
+JEONJU_STATION_CODE = "5211300000"
+
+# DEM 타일 디렉토리
+DEM_TILES_DIR = Path(__file__).parent.parent / "dem" / "tiles"
+
 
 def load_models():
     """모델 로드"""
-    global yolo_model, fruit_disease_model, size_model, weight_model, weight_mean, weight_std, transform, device
+    global yolo_model, fruit_disease_model, diameter_model, weight_model, diameter_mean, diameter_std, weight_mean, weight_std, transform, device
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Loading models on {device}...")
@@ -91,12 +101,16 @@ def load_models():
     else:
         print(f"Warning: Fruit disease model not found")
 
-    # 크기 분류 모델
-    if SIZE_MODEL_PATH.exists():
-        size_model = load_model(str(SIZE_MODEL_PATH), num_classes=3, device=device)
-        print("Size classifier model loaded")
+    # 횡경(크기) 회귀 모델
+    if DIAMETER_MODEL_PATH.exists():
+        diameter_model = load_regressor(str(DIAMETER_MODEL_PATH), device=device)
+        checkpoint = torch.load(str(DIAMETER_MODEL_PATH), map_location=device, weights_only=False)
+        if 'diameter_mean' in checkpoint:
+            diameter_mean = checkpoint['diameter_mean']
+            diameter_std = checkpoint['diameter_std']
+        print(f"Diameter regressor model loaded (mean={diameter_mean:.2f}mm, std={diameter_std:.2f}mm)")
     else:
-        print(f"Warning: Size classifier model not found at {SIZE_MODEL_PATH}")
+        print(f"Warning: Diameter regressor model not found at {DIAMETER_MODEL_PATH}")
 
     # 무게 예측 모델
     if WEIGHT_MODEL_PATH.exists():
@@ -231,18 +245,24 @@ def analyze_image(image_path: str) -> dict:
                         "confidence": round(conf, 3)
                     }
 
-                # 크기 분류
-                if size_model:
+                # 횡경(크기) 예측
+                if diameter_model:
                     with torch.no_grad():
-                        output = size_model(apple_tensor)
-                        probs = torch.softmax(output, dim=1)
-                        pred = probs.argmax(dim=1).item()
-                        conf = probs[0][pred].item()
+                        output = diameter_model(apple_tensor)
+                        # 정규화 역변환
+                        predicted_diameter = output.item() * diameter_std + diameter_mean
 
-                    size_classes = ["L", "M", "S"]
+                    # mm → 등급 변환 (L: 85mm 이상, M: 75-85mm, S: 75mm 미만)
+                    if predicted_diameter >= 85:
+                        size_class = "L"
+                    elif predicted_diameter >= 75:
+                        size_class = "M"
+                    else:
+                        size_class = "S"
+
                     apple_result["size"] = {
-                        "class": size_classes[pred],
-                        "confidence": round(conf, 3)
+                        "class": size_class,
+                        "diameter_mm": round(predicted_diameter, 1)
                     }
 
                 # 무게 예측
@@ -271,7 +291,7 @@ async def startup_event():
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     """메인 페이지"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html")
 
 
 @app.post("/api/upload")
@@ -319,6 +339,23 @@ async def get_result(result_id: str):
     for result in analysis_results:
         if result.get("id") == result_id:
             return JSONResponse(content=result)
+    raise HTTPException(status_code=404, detail="Result not found")
+
+
+@app.delete("/api/results/{result_id}")
+async def delete_result(result_id: str):
+    """특정 분석 결과 삭제"""
+    global analysis_results
+    for i, result in enumerate(analysis_results):
+        if result.get("id") == result_id:
+            # 파일 삭제
+            if result.get("image_path"):
+                try:
+                    Path(result["image_path"]).unlink(missing_ok=True)
+                except:
+                    pass
+            analysis_results.pop(i)
+            return JSONResponse(content={"success": True})
     raise HTTPException(status_code=404, detail="Result not found")
 
 
@@ -374,6 +411,46 @@ async def get_stats():
         "size_stats": size_stats,
         "weight_stats": weight_stats
     })
+
+
+# ========== 기상 API ==========
+
+@app.get("/api/weather/current")
+async def get_current_weather():
+    """현재 기상 조회 (완주군)"""
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(
+                f"{WEATHER_API_BASE}/api/kma/realtime/region/완주군",
+                timeout=10.0
+            )
+            data = response.json()
+            # KMA 실황 데이터를 간단한 형식으로 변환
+            items = data.get("data", []) if isinstance(data, dict) else data
+            if isinstance(items, list) and len(items) > 0:
+                result = {"region": "완주군", "temp": None, "hum": None, "wind": None, "rn": None}
+                for item in items:
+                    cat = item.get("category")
+                    val = item.get("obsrvalue")
+                    if cat == "T1H": result["temp"] = val
+                    elif cat == "REH": result["hum"] = val
+                    elif cat == "WSD": result["wind"] = val
+                    elif cat == "RN1": result["rn"] = val
+                return result
+            return data
+        except Exception as e:
+            return {"error": str(e), "temp": "-", "hum": "-"}
+
+
+# ========== DEM 타일 서빙 ==========
+
+@app.get("/tiles/slope/{z}/{x}/{y}.png")
+async def get_slope_tile(z: int, x: int, y: int):
+    """경사도 타일 서빙"""
+    tile_path = DEM_TILES_DIR / str(z) / str(x) / f"{y}.png"
+    if tile_path.exists():
+        return FileResponse(tile_path, media_type="image/png")
+    raise HTTPException(status_code=404, detail="Tile not found")
 
 
 if __name__ == "__main__":
