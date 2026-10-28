@@ -24,8 +24,8 @@ COPY web/ ./web/
 COPY models/ ./models/
 COPY scripts/ ./scripts/
 
-# Create uploads directory
-RUN mkdir -p /app/web/uploads
+# Create required directories
+RUN mkdir -p /app/web/uploads /app/web/static/css /app/web/static/js
 
 # Set working directory to web
 WORKDIR /app/web
