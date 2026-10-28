@@ -112,6 +112,10 @@
         .btn-danger:hover { background: #c82333; }
         .btn-delete-row { background: none; border: none; color: #dc3545; cursor: pointer; font-size: 1.1em; padding: 2px 6px; opacity: 0.6; transition: opacity 0.2s; }
         .btn-delete-row:hover { opacity: 1; }
+        .sample-images { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+        .sample-img { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 2px solid transparent; transition: all 0.2s; }
+        .sample-img:hover { border-color: #4a7c43; transform: scale(1.05); }
+        .sample-label { font-size: 0.8em; color: #666; margin-top: 10px; margin-bottom: 5px; }
     </style>
 </head>
 <body>
@@ -177,6 +181,8 @@
                             </div>
                         </div>
                         <input type="file" id="fileInput" accept=".jpg,.jpeg,.png" multiple>
+                        <div class="sample-label">예시 이미지 (클릭하여 분석)</div>
+                        <div class="sample-images" id="sampleImages"></div>
                     </div>
                 </div>
                 <div class="card result-card">
@@ -334,6 +340,40 @@
                 if (analysisResults.length === 0) { emptyRow.style.display = ''; resultsBody.appendChild(emptyRow); }
             } catch (e) { console.error('Delete error:', e); }
         }
+        // 예시 이미지 로드
+        async function loadSampleImages() {
+            try {
+                const res = await fetch('/api/sample-images');
+                const data = await res.json();
+                const container = document.getElementById('sampleImages');
+                if (data.images && data.images.length > 0) {
+                    container.innerHTML = data.images.map(img => 
+                        `<img src="${img.url}" class="sample-img" title="${img.filename}" onclick="analyzeSampleImage('${img.url}', '${img.filename}')">`
+                    ).join('');
+                }
+            } catch (e) { console.error('Sample images load error:', e); }
+        }
+        async function analyzeSampleImage(url, filename) {
+            // 미리보기 표시
+            previewImage.src = url; previewImage.style.display = 'block'; previewPlaceholder.style.display = 'none';
+            uploadArea.style.display = 'none'; loading.style.display = 'flex';
+            try {
+                // URL에서 이미지 다운로드 후 업로드
+                const imgRes = await fetch(url);
+                const blob = await imgRes.blob();
+                const file = new File([blob], filename, { type: blob.type });
+                const formData = new FormData();
+                formData.append('files', file);
+                const res = await fetch('/api/upload', { method: 'POST', body: formData });
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                const data = await res.json();
+                if (data.success && data.results) {
+                    for (let r of data.results) { photoIndex++; r.index = photoIndex; analysisResults.push(r); addResultToUI(r); }
+                }
+            } catch (e) { console.error('Sample analyze error:', e); alert('분석 오류: ' + e.message); }
+            loading.style.display = 'none'; uploadArea.style.display = 'flex';
+        }
+        loadSampleImages();
     </script>
 </body>
 </html>

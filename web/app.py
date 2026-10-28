@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
+from io import BytesIO
 
 # 모델 경로 추가 (scripts 폴더를 맨 앞에 추가하여 우선 검색)
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
@@ -16,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
+from fastapi.responses import HTMLResponse, JSONResponse, FileResponse, Response
 from fastapi.requests import Request
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
@@ -46,8 +47,10 @@ app.add_middleware(
 
 # 정적 파일 및 템플릿 설정
 BASE_DIR = Path(__file__).parent
+PROJECT_DIR = BASE_DIR.parent
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 app.mount("/uploads", StaticFiles(directory=BASE_DIR / "uploads"), name="uploads")
+app.mount("/images", StaticFiles(directory=PROJECT_DIR / "images"), name="images")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
 # 모델 경로
@@ -78,6 +81,20 @@ JEONJU_STATION_CODE = "5211300000"
 
 # DEM 타일 디렉토리
 DEM_TILES_DIR = Path(__file__).parent.parent / "dem" / "tiles"
+
+# 투명 타일 (캐싱용)
+TRANSPARENT_TILE = None
+
+
+def get_transparent_tile():
+    """투명한 256x256 PNG 타일 생성"""
+    global TRANSPARENT_TILE
+    if TRANSPARENT_TILE is None:
+        img = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
+        buffer = BytesIO()
+        img.save(buffer, format='PNG')
+        TRANSPARENT_TILE = buffer.getvalue()
+    return TRANSPARENT_TILE
 
 
 def load_models():
@@ -413,6 +430,26 @@ async def get_stats():
     })
 
 
+# ========== 예시 이미지 API ==========
+
+@app.get("/api/sample-images")
+async def get_sample_images():
+    """예시 이미지 목록 조회"""
+    images_dir = PROJECT_DIR / "images"
+    if not images_dir.exists():
+        return JSONResponse(content={"images": []})
+
+    images = []
+    for f in images_dir.glob("*"):
+        if f.is_file() and f.suffix.lower() in [".jpg", ".jpeg", ".png"]:
+            images.append({
+                "filename": f.name,
+                "url": f"/images/{f.name}"
+            })
+
+    return JSONResponse(content={"images": images})
+
+
 # ========== 기상 API ==========
 
 @app.get("/api/weather/current")
@@ -446,11 +483,12 @@ async def get_current_weather():
 
 @app.get("/tiles/slope/{z}/{x}/{y}.png")
 async def get_slope_tile(z: int, x: int, y: int):
-    """경사도 타일 서빙"""
+    """경사도 타일 서빙 (없는 타일은 투명 타일 반환)"""
     tile_path = DEM_TILES_DIR / str(z) / str(x) / f"{y}.png"
     if tile_path.exists():
         return FileResponse(tile_path, media_type="image/png")
-    raise HTTPException(status_code=404, detail="Tile not found")
+    # 타일이 없으면 투명 타일 반환 (404 대신)
+    return Response(content=get_transparent_tile(), media_type="image/png")
 
 
 if __name__ == "__main__":
