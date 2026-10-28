@@ -23,7 +23,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY web/ ./web/
 COPY models/ ./models/
 COPY scripts/ ./scripts/
-COPY dem/ ./dem/
 
 # Create uploads directory
 RUN mkdir -p /app/web/uploads
